@@ -126,3 +126,137 @@ This training cost $5 and ran in 11 minutes.
 After training is finished, download the LoRA adapter and copy to your project space on Sherlock.
 
 In this case, we made a models directory in our project space and copy the adapter to `<project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora`.
+
+For inference, we will copy the adapter and unpack it on scratch.
+
+```bash title="Terminal Input From Login Node"
+export SCRATCH_BASE=$GROUP_SCRATCH/$USER
+mkdir -p $SCRATCH_BASE/vllm/models
+cp -r <project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora \
+   "$SCRATCH_BASE/vllm/models"
+cd "$SCRATCH_BASE/vllm/models/qwen3-8b-1epoch-10k-data-32-lora"
+tar --use-compress-program=unzstd -xvf ft-*.tar.zst -C .
+```
+
+Now the LoRA weights are unpacked and ready.
+
+## Step 6. Launch the vLLM Server on a GPU Node
+With our adapter ready, we now need to launch a vLLM server on a GPU node. This will host the base model (and later the fine-tuned adapter) so we can run inference from a login node.
+
+First, request a GPU node with enough memory for Qwen3-8B:
+
+```bash title="Terminal Input From Login Node"
+srun -p gpu -G 1 -C "GPU_MEM:80GB" -n 1 -c 16 --mem=50G -t 2:00:00 --pty /bin/bash
+```
+
+Load the vLLM module:
+
+```bash title="Terminal Input on GPU Node"
+ml py-vllm/0.7.0_py312
+```
+
+Clone a repo with a helper wrapper to launch vLLM on available port:
+
+```bash title="Terminal Input on GPU Node"
+git clone https://github.com/gsbdarc/vllm_helper.git
+```
+
+Make the environment:
+
+```
+cd vllm_helper
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Point scratch directories so large files don’t live on home:
+
+```bash title="Terminal Input on GPU Node"
+export SCRATCH_BASE=$GROUP_SCRATCH/$USER
+export APPTAINER_CACHEDIR=$SCRATCH_BASE/.apptainer
+```
+
+Pull the latest vLLM container and source the wrapper script:
+
+```bash title="Terminal Input on GPU Node"
+apptainer pull vllm-openai.sif docker://vllm/vllm-openai:latest
+source vllm.sh
+```
+
+Export the base model and start the server:
+
+```bash title="Terminal Input on GPU Node"
+export VLLM_MODEL=Qwen/Qwen3-8B-Base
+vllm serve &
+```
+
+You’ll see output with the GPU hostname and port — this confirms the server is running.
+
+## Step 7. Run the Base Model
+Once the server is up, we can run inference from a login node.
+
+
+On the login node:
+```bash title="Terminal Input From Login Node"
+cd vllm_helper/example
+ml python/3.12.1
+source venv/bin/activate
+pip install -r requirements.txt
+export SCRATCH_BASE=$GROUP_SCRATCH/$USER
+```
+
+Run the baseline inference script on test set:
+
+```bash title="Terminal Input From Login Node"
+python infer_base_8b.py
+```
+
+This will query the running vLLM server and evaluate predictions from the base model.
+
+- Final accuracy (base): 0.39 over 5,000 labeled examples
+
+This is our baseline performance using the Qwen3-8B-Base model.
+
+## Step 8. Run with the Fine-Tuned Adapter
+
+Now let’s load the LoRA adapter we downloaded from Together and repeat the experiment.
+
+Stop and re-start vLLM server:
+```bash title="Terminal Input on GPU Node"
+vllm stop
+```
+
+We will enable LoRA and point vLLM to the adapter path:
+```
+export VLLM_MODEL=Qwen/Qwen3-8B-Base
+export VLLM_ENABLE_LORA=1
+export VLLM_LORAS="reddit=/models/qwen3-8b-1epoch-10k-data-32-lora"
+```
+
+A few important notes here:
+
+- The string before the = (reddit) is the adapter name.
+
+    - In our Python inference script, we refer to this adapter by name (`reddit`) when choosing which fine-tuned weights to apply.
+
+    - You can name it anything you like, but it must match between the environment variable and your code.
+
+- The path after the = points to the directory where the LoRA adapter files are unpacked.
+
+Relaunch the vLLM server on your GPU node:
+```bash title="Terminal Input on GPU Node"
+vllm serve --max-lora-rank 32 &
+```
+
+By default, vLLM only allows LoRA adapters up to rank 16. Because we trained with LoRA rank 32, we need to override this limit by specifying `--max-lora-rank 32`. Without this flag, vLLM won’t load the adapter correctly.
+
+Then, from the login node, run the fine-tuned inference script on the test set:
+
+```bash title="Terminal Input From Login Node"
+python infer_ft_8b.py
+```
+
+- Final accuracy (adapter): 0.74 over 5,000 labeled examples
+
+This shows the impact of fine-tuning: accuracy nearly doubled compared to the base model.
