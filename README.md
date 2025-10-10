@@ -38,11 +38,6 @@ Each row is stored as JSONL (JSON Lines). Together expects the following format:
 ```{.yaml .no-copy title="Expected JSONL format"}
 {"prompt": "Post title\n\nPost body", "completion": "subreddit_name"}
 ```
-Each row is stored as JSONL (JSON Lines). Together expects the following format:
-
-```{.yaml .no-copy title="Expected JSONL format"}
-{"prompt": "Post title\n\nPost body", "completion": "subreddit_name"}
-```
 
 This structure is all you need — one input string, one output string per line.
 
@@ -56,9 +51,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+On the Yens, create a Python environment for data prep and training:
+```
+cd <project-space>/llm-ft
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+
 This ensures we can build JSONL files, interact with Together’s API, and later run inference locally.
+
 ## Step 3. Upload Training Files to Together
-With train.jsonl, val.jsonl and test.jsonl ready, we upload the training and (optionally) validation sets:
+With `train.jsonl`, `val.jsonl` and `test.jsonl` ready, we upload the training and (optionally) validation sets:
 ```bash title="Terminal Input From Login Node"
 together files upload train.jsonl
 together files upload val.jsonl
@@ -69,7 +74,7 @@ You can launch the fine-tuning job via Together CLI or through the web interface
 
 The web interface makes it easy to adjust parameters, track progress, and view checkpoints.
 
-Login to [Together](https://api.together.xyz/fine-tuning){target="_blank"} and go to Fine-tuning tab to start a new job.
+Login to [Together](https://api.together.xyz/fine-tuning) and go to Fine-tuning tab to start a new job.
 
 First, select the base model.
 
@@ -97,7 +102,7 @@ You’ll be prompted to select parameters. For our experiment, we chose the foll
 
 - LoRA dropout: 0.05
 
-- LoRA trainable modules: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
+- LoRA trainable modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
 
 - Train on inputs: false
 
@@ -129,9 +134,19 @@ In this case, we made a models directory in our project space and copy the adapt
 
 For inference, we will copy the adapter and unpack it on scratch.
 
+On Sherlock:
 ```bash title="Terminal Input From Login Node"
 export SCRATCH_BASE=$GROUP_SCRATCH/$USER
 mkdir -p $SCRATCH_BASE/vllm/models
+cp -r <project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora \
+   "$SCRATCH_BASE/vllm/models"
+cd "$SCRATCH_BASE/vllm/models/qwen3-8b-1epoch-10k-data-32-lora"
+tar --use-compress-program=unzstd -xvf ft-*.tar.zst -C .
+```
+
+On the Yens:
+```
+
 cp -r <project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora \
    "$SCRATCH_BASE/vllm/models"
 cd "$SCRATCH_BASE/vllm/models/qwen3-8b-1epoch-10k-data-32-lora"
@@ -143,14 +158,21 @@ Now the LoRA weights are unpacked and ready.
 ## Step 6. Launch the vLLM Server on a GPU Node
 With our adapter ready, we now need to launch a vLLM server on a GPU node. This will host the base model (and later the fine-tuned adapter) so we can run inference from a login node.
 
-First, request a GPU node with enough memory for Qwen3-8B:
+First, request a GPU node with enough memory for Qwen3-8B.
 
+On Sherlock:
 ```bash title="Terminal Input From Login Node"
 srun -p gpu -G 1 -C "GPU_MEM:80GB" -n 1 -c 16 --mem=50G -t 2:00:00 --pty /bin/bash
 ```
 
+On the Yens:
+```bash title="Terminal Input From Login Node"
+srun -p gpu -G 1 -C "GPU_MODEL:A40" -n 1 -c 16 --mem=50G -t 2:00:00 --pty /bin/bash
+```
+
 Load the vLLM module:
 
+On Sherlock:
 ```bash title="Terminal Input on GPU Node"
 ml py-vllm/0.7.0_py312
 ```
