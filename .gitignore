@@ -1,0 +1,6 @@
+# Ignore Singularity image files
+*.sif
+
+# Ignore virtual environments
+venv/
+example/venv/
