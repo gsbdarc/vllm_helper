@@ -3,10 +3,10 @@
 Helper scripts and examples for running **vLLM** on Stanford clusters (Sherlock, Marlowe, Yens) and for evaluating **fine-tuned LoRA adapters** trained on [Together](https://together.ai).
 
 This repo accompanies the blog post [Fine-Tuning Open Source Models with Together + vLLM](link).  
-It provides the **“try it yourself”** walkthrough: from preparing JSONL datasets to running base and fine-tuned models on Sherlock.
+It provides the **“try it yourself”** walkthrough: from preparing JSONL datasets to running base and fine-tuned models on Sherlock and Yen Stanford clusters.
 
 ---
-In this example, we fine-tune Qwen3-8B-Base to classify Reddit posts into one of ten subreddits. With no fine-tuning, the base model reached an accuracy of 0.39 on our test set. After fine-tuning with LoRA adapters, accuracy nearly doubled to 0.74.
+In this example, we fine-tune [Qwen3-8B-Base](https://huggingface.co/Qwen/Qwen3-8B/tree/main) to classify Reddit posts into one of ten subreddits. With no fine-tuning, the base model reached an accuracy of 0.39 on our test set. After fine-tuning with LoRA adapters, accuracy nearly doubled to 0.74.
 
 We’ll walk step by step through:
 
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 ```
 
 On the Yens, create a Python environment for data prep and training:
-```
+```bash title="Terminal Input From Login Node"
 cd <project-space>/llm-ft
 python3 -m venv venv
 source venv/bin/activate
@@ -128,9 +128,9 @@ This training cost $5 and ran in 11 minutes.
 
 ## Step 5. Download the trained LoRA Adapter
 
-After training is finished, download the LoRA adapter and copy to your project space on Sherlock.
+After training is finished, download the LoRA adapter and copy to your project space on Sherlock or Yen.
 
-In this case, we made a models directory in our project space and copy the adapter to `<project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora`.
+In this case, we made `models` directory in our project space and copy the adapter to `<project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora`.
 
 For inference, we will copy the adapter and unpack it on scratch.
 
@@ -145,8 +145,8 @@ tar --use-compress-program=unzstd -xvf ft-*.tar.zst -C .
 ```
 
 On the Yens:
-```
-
+```bash title="Terminal Input From Login Node"
+export SCRATCH_BASE=/scratch/shared/$USER
 cp -r <project-space>/llm-ft/models/qwen3-8b-1epoch-10k-data-32-lora \
    "$SCRATCH_BASE/vllm/models"
 cd "$SCRATCH_BASE/vllm/models/qwen3-8b-1epoch-10k-data-32-lora"
@@ -172,19 +172,15 @@ srun -p gpu -G 1 -C "GPU_MODEL:A40" -n 1 -c 16 --mem=50G -t 2:00:00 --pty /bin/b
 
 Load the vLLM module:
 
-On Sherlock:
-```bash title="Terminal Input on GPU Node"
-ml py-vllm/0.7.0_py312
-```
-
-Clone a repo with a helper wrapper to launch vLLM on available port:
+On Sherlock or Yens, clone a repo with a helper wrapper to launch vLLM on available port:
 
 ```bash title="Terminal Input on GPU Node"
 git clone https://github.com/gsbdarc/vllm_helper.git
 ```
 
-Make the environment:
+Make the virtual environment.
 
+On Sherlock:
 ```
 cd vllm_helper
 python3 -m venv venv
@@ -192,10 +188,26 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+On the Yens:
+```
+cd vllm_helper
+/usr/bin/python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
 Point scratch directories so large files don’t live on home:
 
+On Sherlock:
 ```bash title="Terminal Input on GPU Node"
 export SCRATCH_BASE=$GROUP_SCRATCH/$USER
+export APPTAINER_CACHEDIR=$SCRATCH_BASE/.apptainer
+```
+
+On the Yens:
+```bash title="Terminal Input on GPU Node"
+ml apptainer
+export SCRATCH_BASE=/scratch/shared/$USER
 export APPTAINER_CACHEDIR=$SCRATCH_BASE/.apptainer
 ```
 
@@ -219,7 +231,7 @@ You’ll see output with the GPU hostname and port — this confirms the server 
 Once the server is up, we can run inference from a login node.
 
 
-On the login node:
+On Sherlock's login node:
 ```bash title="Terminal Input From Login Node"
 cd vllm_helper/example
 ml python/3.12.1
@@ -228,13 +240,24 @@ pip install -r requirements.txt
 export SCRATCH_BASE=$GROUP_SCRATCH/$USER
 ```
 
-Run the baseline inference script on test set:
+On the Yen's login node:
+```bash title="Terminal Input From Login Node"
+cd vllm_helper/example
+/usr/bin/python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+export SCRATCH_BASE=/scratch/shared/$USER
+```
+
+First, set the `PROJ_DIR` in the `infer_base_8b.py` script to be your project directory path. Then, run the baseline inference script on test set:
 
 ```bash title="Terminal Input From Login Node"
 python infer_base_8b.py
 ```
 
-This will query the running vLLM server and evaluate predictions from the base model.
+This will query the running vLLM server and evaluate predictions from the base model. While the job is running, it is instructive to ssh to the GPU node where the vLLM server is running and run `watch nvidia-smi` to see GPU utilization and GPU RAM usage.
+
+![nvidia-smi-output](images/nvidia-smi-output.png) 
 
 - Final accuracy (base): 0.39 over 5,000 labeled examples
 
@@ -258,13 +281,13 @@ export VLLM_LORAS="reddit=/models/qwen3-8b-1epoch-10k-data-32-lora"
 
 A few important notes here:
 
-- The string before the = (reddit) is the adapter name.
+- The string before the `=` (reddit) is the adapter name.
 
     - In our Python inference script, we refer to this adapter by name (`reddit`) when choosing which fine-tuned weights to apply.
 
     - You can name it anything you like, but it must match between the environment variable and your code.
 
-- The path after the = points to the directory where the LoRA adapter files are unpacked.
+- The path after the `=` points to the directory where the LoRA adapter files are unpacked.
 
 Relaunch the vLLM server on your GPU node:
 ```bash title="Terminal Input on GPU Node"
