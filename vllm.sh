@@ -1,27 +1,70 @@
 # vllm.sh
 #!/usr/bin/env bash
+# Unified vLLM helper for Apptainer/Singularity on HPC (Yens + Sherlock)
+# - Starts an OpenAI-compatible vLLM server in a container
+# - Pins HF + compile caches to $SCRATCH_BASE
+# - Gives container a writable HOME via --home without overriding HOME env
+#
+# Usage:
+#   export SCRATCH_BASE=/path/to/scratch
+#   export VLLM_MODEL=Qwen/Qwen3-8B-Base
+#   # Optional:
+#   #   VLLM_SIF=/path/to/vllm-openai.sif
+#   #   VLLM_TP=2
+#   #   VLLM_MAX_LEN=16384
+#   #   VLLM_QUANT=fp8
+#   #   VLLM_ENABLE_LORA=1; VLLM_LORAS="my-lora=/models/my-lora"
+#   #   VLLM_ENFORCE_EAGER=1
+#   #   HF_TOKEN=xxxxxxxx
+#   #   VLLM_DISABLE_FLASHINFER_JIT=1
+#   #   APPTAINER_BIN=/usr/bin/apptainer
+#
+#   source ./vllm.sh
+#   vllm serve &
+#   vllm chat "Hello"
+#   vllm stop
 
 vllm() {
   local LOWERPORT=32768 UPPERPORT=60999
-  local S PORT_FILE HOST_FILE PORT HOST ENV_HOST SIF MODEL
+  local S PORT_FILE HOST_FILE PORT HOST SIF MODEL BIND ENV_HOST APPT
 
-  # 1) Require SCRATCH_BASE
-  if [ -z "$SCRATCH_BASE" ]; then
+  # Require SCRATCH_BASE
+  if [ -z "${SCRATCH_BASE:-}" ]; then
     echo "ERROR: please export SCRATCH_BASE" >&2
     return 1
   fi
 
-  # 2) Scratch tree (models, HF cache, tmp, and compile caches)
+  # Require model
+  if [ -z "${VLLM_MODEL:-}" ]; then
+    echo "ERROR: please export VLLM_MODEL (e.g., export VLLM_MODEL=Qwen/Qwen3-8B-Base)" >&2
+    return 1
+  fi
+
+  # Find apptainer/singularity
+  APPT="${APPTAINER_BIN:-}"
+  if [ -z "$APPT" ]; then
+    if command -v apptainer >/dev/null 2>&1; then
+      APPT=$(command -v apptainer)
+    elif command -v singularity >/dev/null 2>&1; then
+      APPT=$(command -v singularity)
+    else
+      echo "ERROR: apptainer/singularity not found in PATH" >&2
+      return 1
+    fi
+  fi
+
+  # Scratch/caches (no global env; container sees these via binds)
   S="${SCRATCH_BASE}/vllm"
-  mkdir -p "${S}"/{models,hf-cache,tmp,cache}
+  mkdir -p "${S}"/{models,hf-cache,tmp,cache,home}
+  mkdir -p "${S}/cache"/{flashinfer,torchinductor,triton,nv}
   PORT_FILE="${S}/port.txt"
   HOST_FILE="${S}/host.txt"
 
-  # 3) Choose your SIF and default model (override via env)
+  # Container SIF (required or default to local)
   SIF="${VLLM_SIF:-$PWD/vllm-openai.sif}"
-  MODEL="${VLLM_MODEL:-Qwen/Qwen3-14B-Base}"
+  MODEL="${VLLM_MODEL}"
 
-  # 4) Helper: pick an unused TCP port
+  # Helper: pick an unused TCP port
   find_available_port() {
     local p
     while :; do
@@ -33,26 +76,35 @@ vllm() {
   }
 
   if [ "$1" = "serve" ] || [ ! -f "$PORT_FILE" ] || [ ! -f "$HOST_FILE" ]; then
-    # 5) Start server
+    # Start server
     PORT=$(find_available_port)
     echo "$PORT" > "$PORT_FILE"
     hostname -s > "$HOST_FILE"
 
-    local BIND="0.0.0.0:${PORT}"
+    BIND="0.0.0.0:${PORT}"
     ENV_HOST="http://$(<"$HOST_FILE"):${PORT}"
 
     echo "Starting vLLM server binding to ${BIND}"
     echo "Advertising server to clients at ${ENV_HOST}"
     shift
 
-    # Clean CUDA visibility oddities
     unset ROCR_VISIBLE_DEVICES
 
-    # IMPORTANT: --cleanenv to drop host CC/mpicc/etc, then re-add needed env
-    exec apptainer exec \
+    # Optional FlashInfer JIT toggle
+    local FLASHINFER_ARGS=()
+    if [ "${VLLM_DISABLE_FLASHINFER_JIT:-0}" = "1" ]; then
+      FLASHINFER_ARGS+=( --env "FLASHINFER_DISABLE_JIT_CACHE=1" )
+    else
+      FLASHINFER_ARGS+=( --env "FLASHINFER_WORKSPACE_DIR=/root/.cache/flashinfer" )
+    fi
+
+    # Run container
+    exec "$APPT" exec \
       --nv \
       --contain \
+      --writable-tmpfs \
       --cleanenv \
+      --home "${S}/home:/root" \
       --bind "${S}/hf-cache:/root/.cache/huggingface" \
       --bind "${S}/models:/models" \
       --bind "${S}/cache:/root/.cache" \
@@ -63,9 +115,10 @@ vllm() {
       --env "TRITON_CACHE_DIR=/root/.cache/triton" \
       --env "CUDA_CACHE_PATH=/root/.cache/nv" \
       --env "TMPDIR=/tmp" \
-      --env "HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}" \
+      ${HF_TOKEN:+--env "HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}"} \
       --env "CC=cc" --env "CXX=c++" \
       --env "MPICC=" --env "MPICXX=" --env "OMPI_CC=" --env "OMPI_CXX=" \
+      "${FLASHINFER_ARGS[@]}" \
       "$SIF" python3 -m vllm.entrypoints.openai.api_server \
         --model "${MODEL}" \
         --download-dir /models \
@@ -79,7 +132,7 @@ vllm() {
         "$@"
   fi
 
-  # 6) Client mode: forward subcommands to the running server
+  # Client mode
   PORT=$(<"$PORT_FILE")
   HOST=$(<"$HOST_FILE")
   ENV_HOST="http://${HOST}:${PORT}"
@@ -104,7 +157,6 @@ EOF
       curl -sS "${ENV_HOST}/v1/models" | jq
       ;;
     stop)
-      # best-effort stop: find the apptainer python server and kill it
       pkill -f "python3 -m vllm.entrypoints.openai.api_server" || true
       ;;
     *)
