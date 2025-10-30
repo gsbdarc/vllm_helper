@@ -182,6 +182,7 @@ Make the virtual environment.
 
 On Sherlock:
 ```
+ml python/3.12.1
 cd vllm_helper
 python3 -m venv venv
 source venv/bin/activate
