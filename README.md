@@ -320,7 +320,7 @@ While the model is training, you can see the training metrics at [OpenAI Fine-tu
 
 ![GPT Fine-tuning metrics](images/gpt-fine-tuning.png)
 
-To train GPT-4.1 mini model with 98,000 examples cost around $80 with $5 per 1M training tokens. 
+To train GPT-4.1 mini model with 98,000 examples cost around $85 with $5 per 1M training tokens. 
 
 - Final test set accuracy (fine-tuned GPT-4.1 mini) is 0.89 over 5,000 labeled examples.
 
@@ -330,7 +330,7 @@ Fine-tuning an open-source model like Qwen3-8B with Together + vLLM achieves **n
 | Model | Type | Fine-Tuned | Accuracy | Cost | Runtime |
 |--------|------|-------------|-----------|--------|-----------|
 | Qwen3-8B-Base | Open-source | No | 0.39 | $0 | ~10 min (A40 GPU with vLLM) |
-| Qwen3-8B + LoRA | Open-source | Yes | 0.74 | ~$5 (training) | ~10 min (Together) |
+| Qwen3-8B + LoRA | Open-source | Yes | 0.74 | ~$5 (training) | ~11 min (Together) |
 | GPT-4.1-mini Base | Proprietary | No | 0.76 | $0.19 | ~40 min (Batches API) |
 | GPT-4.1-mini Fine-Tuned | Proprietary | Yes | 0.89 | ~$85 (training) | ~4 hours |
 
