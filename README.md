@@ -305,3 +305,32 @@ python infer_ft_8b.py
 - Final accuracy (adapter): 0.74 over 5,000 labeled examples
 
 This shows the impact of fine-tuning: accuracy nearly doubled compared to the base model.
+
+## Comparing to GPT Model
+
+To benchmark our fine-tuned open-source model, we also evaluated the same Reddit classification task using OpenAI’s **GPT-4.1-mini** model.
+
+### Setup
+- **Base model:** `gpt-4.1-mini` 
+- **Prompt:** identical format to our JSONL training data (`title + body → subreddit_name`)  
+- **Dataset:** same 5,000 labeled test examples used for the Qwen3-8B evaluation  
+- **Training dataset:** identical training and validation examples used for the Qwen3-8B LoRA experiment  
+
+While the model is training, you can see the training metrics at [OpenAI Fine-tuning Dashboard](https://platform.openai.com/finetune). Once the data format is validated, you can watch the training as it progresses:
+
+![GPT Fine-tuning metrics](images/gpt-fine-tuning.png)
+
+To train GPT-4.1 mini model with 98,000 examples cost around $80 with $5 per 1M training tokens. 
+
+- Final test set accuracy (fine-tuned GPT-4.1 mini) is 0.89 over 5,000 labeled examples.
+
+### Results
+Fine-tuning an open-source model like Qwen3-8B with Together + vLLM achieves **near-GPT-level accuracy** at minimal ongoing cost.
+
+| Model | Type | Fine-Tuned | Accuracy | Cost | Runtime |
+|--------|------|-------------|-----------|--------|-----------|
+| Qwen3-8B-Base | Open-source | No | 0.39 | $0 | ~10 min (A40 GPU with vLLM) |
+| Qwen3-8B + LoRA | Open-source | Yes | 0.74 | ~$5 (training) | ~10 min (Together) |
+| GPT-4.1-mini Base | Proprietary | No | 0.76 | $0.19 | ~40 min (Batches API) |
+| GPT-4.1-mini Fine-Tuned | Proprietary | Yes | 0.89 | ~$85 (training) | ~4 hours |
+
