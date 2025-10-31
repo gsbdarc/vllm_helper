@@ -165,7 +165,7 @@ On Sherlock:
 srun -p gpu -G 1 -C "GPU_MEM:80GB" -n 1 -c 16 --mem=50G -t 2:00:00 --pty /bin/bash
 ```
 
-Note, DO NOT use JupyterHub terminal to launnch vLLM server. Only user a terminal app to get a GPU allocation and then launch the inference server. 
+Note, DO NOT use JupyterHub terminal to launch vLLM server. Please use a terminal app to get a GPU allocation and then launch the inference server outside of Jupyter terminal. 
 
 On the Yens:
 ```bash title="Terminal Input From Login Node"
