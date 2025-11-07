@@ -1,12 +1,12 @@
 # vllm_helper
 
-Helper scripts and examples for running **vLLM** on Stanford clusters (Sherlock, Marlowe, Yens) and for evaluating **fine-tuned LoRA adapters** trained on [Together](https://together.ai).
+Helper scripts and examples for running **vLLM** on Stanford clusters (Sherlock, Marlowe, Yens) and for evaluating **fine-tuned LoRA adapters** trained on [Together AI](https://together.ai).
 
-This repo accompanies the blog post [Fine-Tuning Open Source Models with Together + vLLM](link).  
+This repo accompanies the blog post [Fine-Tuning Open Source Models with Together + vLLM]([link](https://rcpedia.stanford.edu/blog/2025/11/07/fine-tuning-open-source-models/)).  
 It provides the **“try it yourself”** walkthrough: from preparing JSONL datasets to running base and fine-tuned models on Sherlock and Yen Stanford clusters.
 
 ---
-In this example, we fine-tune [Qwen3-8B-Base](https://huggingface.co/Qwen/Qwen3-8B/tree/main) to classify Reddit posts into one of ten subreddits. With no fine-tuning, the base model reached an accuracy of 0.39 on our test set. After fine-tuning with LoRA adapters, accuracy nearly doubled to 0.74.
+In this example, we fine-tune [Qwen3-8B-Base](https://huggingface.co/Qwen/Qwen3-8B/tree/main) to classify Reddit posts into one of ten subreddits. With no fine-tuning, the base model reached an accuracy of 0.41 on our test set. After fine-tuning with LoRA adapters, accuracy nearly doubled to 0.78.
 
 We’ll walk step by step through:
 
@@ -262,7 +262,7 @@ This will query the running vLLM server and evaluate predictions from the base m
 
 ![nvidia-smi-output](images/nvidia-smi-output.png) 
 
-- Final accuracy (base): 0.39 over 5,000 labeled examples
+- Final accuracy (base): 0.41 over 5,000 labeled examples
 
 This is our baseline performance using the Qwen3-8B-Base model.
 
@@ -305,7 +305,7 @@ Then, from the login node, run the fine-tuned inference script on the test set:
 python infer_ft_8b.py
 ```
 
-- Final accuracy (adapter): 0.74 over 5,000 labeled examples
+- Final accuracy (adapter): 0.78 over 5,000 labeled examples
 
 This shows the impact of fine-tuning: accuracy nearly doubled compared to the base model.
 
@@ -332,8 +332,11 @@ Fine-tuning an open-source model like Qwen3-8B with Together + vLLM achieves **n
 
 | Model | Type | Fine-Tuned | Accuracy | Cost | Runtime |
 |--------|------|-------------|-----------|--------|-----------|
-| Qwen3-8B-Base | Open-source | No | 0.39 | $0 | ~10 min (A40 GPU with vLLM) |
-| Qwen3-8B + LoRA | Open-source | Yes | 0.74 | ~$5 (training) | ~11 min (Together) |
-| GPT-4.1-mini Base | Proprietary | No | 0.76 | $0.19 | ~40 min (Batches API) |
+| Random Forest | Open-source | No | 0.72 | $0 | ~10 min (CPU) |
+| Qwen3-8B-Base | Open-source | No | 0.41 | $0 | ~10 min (A40 GPU with vLLM) |
+| Qwen3-8B + LoRA | Open-source | Yes | 0.78 | ~$5 (training) | ~11 min (Together) |
+| GPT-4.1-mini Base | Proprietary | No | 0.79 | $0.19 | ~40 min (Batches API) |
 | GPT-4.1-mini Fine-Tuned | Proprietary | Yes | 0.89 | ~$85 (training) | ~4 hours |
 
+The Random Forest model provides a classical machine learning baseline, trained on the same Reddit dataset using simple 1- and 2-gram vectorized text features. Despite its straightforward design and CPU-only runtime, it achieves 0.72 accuracy, showing that traditional models can still perform competitively on text classification tasks.
+By comparison, fine-tuning Qwen3-8B with LoRA adapters nearly matches GPT-4.1-mini’s base accuracy at a fraction of the cost, while fine-tuned GPT-4.1-mini achieves the best overall performance.
