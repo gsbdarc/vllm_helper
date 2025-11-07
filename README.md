@@ -2,7 +2,7 @@
 
 Helper scripts and examples for running **vLLM** on Stanford clusters (Sherlock, Marlowe, Yens) and for evaluating **fine-tuned LoRA adapters** trained on [Together AI](https://together.ai).
 
-This repo accompanies the blog post [Fine-Tuning Open Source Models with Together + vLLM]([link](https://rcpedia.stanford.edu/blog/2025/11/07/fine-tuning-open-source-models/)).  
+This repo accompanies the blog post [Fine-Tuning Open Source Models with Together + vLLM](https://rcpedia.stanford.edu/blog/2025/11/07/fine-tuning-open-source-models/).  
 It provides the **“try it yourself”** walkthrough: from preparing JSONL datasets to running base and fine-tuned models on Sherlock and Yen Stanford clusters.
 
 ---
